@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>トルネードチャート | 感度分析ツール</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Helvetica Neue', Arial, sans-serif; background: #f5f6fa; color: #2d3436; }
+  h1 { font-size: 1.4rem; font-weight: 700; color: #2d3436; }
+  .subtitle { font-size: 0.85rem; color: #636e72; margin-top: 2px; }
+
+  header { background: #fff; padding: 16px 24px; border-bottom: 1px solid #dfe6e9; display: flex; align-items: center; gap: 12px; }
+  .icon { width: 36px; height: 36px; background: #0984e3; border-radius: 8px; display: flex; align-items: center; justify-content: center; }
+  .icon svg { fill: white; }
+
+  main { display: flex; gap: 0; min-height: calc(100vh - 61px); }
+
+  /* --- 左パネル --- */
+  .panel { width: 360px; min-width: 300px; background: #fff; border-right: 1px solid #dfe6e9; display: flex; flex-direction: column; }
+  .panel-header { padding: 16px 20px; border-bottom: 1px solid #dfe6e9; }
+  .panel-header h2 { font-size: 0.9rem; font-weight: 600; color: #636e72; text-transform: uppercase; letter-spacing: 0.05em; }
+
+  .baseline-section { padding: 16px 20px; border-bottom: 1px solid #dfe6e9; }
+  .baseline-section label { font-size: 0.82rem; color: #636e72; display: block; margin-bottom: 4px; }
+  .baseline-section input { width: 100%; padding: 8px 10px; border: 1px solid #dfe6e9; border-radius: 6px; font-size: 0.9rem; }
+
+  .vars-section { flex: 1; overflow-y: auto; padding: 12px 20px; }
+  .var-card { background: #f8f9fa; border: 1px solid #dfe6e9; border-radius: 8px; padding: 12px; margin-bottom: 10px; position: relative; }
+  .var-card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+  .var-label { font-size: 0.78rem; font-weight: 600; color: #0984e3; }
+  .btn-remove { background: none; border: none; cursor: pointer; color: #b2bec3; font-size: 1rem; padding: 2px 6px; border-radius: 4px; transition: color 0.15s; }
+  .btn-remove:hover { color: #d63031; }
+  .var-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .var-grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
+  .field { display: flex; flex-direction: column; gap: 3px; }
+  .field label { font-size: 0.75rem; color: #636e72; }
+  .field input { padding: 6px 8px; border: 1px solid #dfe6e9; border-radius: 5px; font-size: 0.85rem; background: #fff; }
+  .field input:focus { outline: none; border-color: #0984e3; }
+
+  .btn-add { margin: 0 20px 12px; padding: 10px; background: none; border: 2px dashed #b2bec3; border-radius: 8px; color: #636e72; cursor: pointer; font-size: 0.85rem; transition: all 0.15s; width: calc(100% - 40px); }
+  .btn-add:hover { border-color: #0984e3; color: #0984e3; }
+
+  .btn-draw { margin: 0 20px 20px; padding: 12px; background: #0984e3; color: #fff; border: none; border-radius: 8px; cursor: pointer; font-size: 0.95rem; font-weight: 600; width: calc(100% - 40px); transition: background 0.15s; }
+  .btn-draw:hover { background: #0773c5; }
+
+  /* --- チャートエリア --- */
+  .chart-area { flex: 1; padding: 28px 32px; overflow-y: auto; }
+  .chart-area h2 { font-size: 1rem; font-weight: 600; margin-bottom: 4px; }
+  .chart-area .desc { font-size: 0.82rem; color: #636e72; margin-bottom: 20px; }
+  .chart-wrap { background: #fff; border: 1px solid #dfe6e9; border-radius: 12px; padding: 24px; }
+  .empty-state { text-align: center; padding: 60px 20px; color: #b2bec3; }
+  .empty-state svg { width: 56px; height: 56px; fill: #dfe6e9; margin-bottom: 12px; }
+  .empty-state p { font-size: 0.9rem; }
+
+  /* SVGスタイル */
+  .bar-low { fill: #d63031; }
+  .bar-high { fill: #0984e3; }
+  .axis text { font-size: 11px; fill: #636e72; }
+  .axis line, .axis path { stroke: #dfe6e9; }
+  .grid line { stroke: #f0f0f0; stroke-dasharray: 3,3; }
+  .baseline-line { stroke: #2d3436; stroke-width: 1.5; stroke-dasharray: 4,3; }
+  .val-label { font-size: 10.5px; }
+  .var-name { font-size: 12px; fill: #2d3436; font-weight: 500; }
+  .legend { font-size: 11px; fill: #636e72; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="icon">
+    <svg viewBox="0 0 24 24" width="20" height="20"><path d="M3 6h18v2H3V6zm2 5h14v2H5v-2zm3 5h8v2H8v-2z"/></svg>
+  </div>
+  <div>
+    <h1>トルネードチャート</h1>
+    <div class="subtitle">感度分析ツール</div>
+  </div>
+</header>
+
+<main>
+  <!-- 左パネル -->
+  <div class="panel">
+    <div class="panel-header"><h2>入力設定</h2></div>
+
+    <div class="baseline-section">
+      <label>ベースケース値（基準値）</label>
+      <input type="number" id="baseline" value="100" step="any">
+    </div>
+
+    <div class="vars-section" id="vars-container">
+      <!-- 変数カードがここに追加される -->
+    </div>
+
+    <button class="btn-add" id="btn-add">＋ 変数を追加</button>
+    <button class="btn-draw" id="btn-draw">チャートを描画</button>
+  </div>
+
+  <!-- チャートエリア -->
+  <div class="chart-area">
+    <h2>トルネードチャート</h2>
+    <div class="desc">各変数がベースケースに与える影響の大きさを比較します</div>
+    <div class="chart-wrap" id="chart-wrap">
+      <div class="empty-state" id="empty-state">
+        <svg viewBox="0 0 24 24"><path d="M3 6h18v2H3V6zm2 5h14v2H5v-2zm3 5h8v2H8v-2z"/></svg>
+        <p>左のパネルに変数を入力して<br>「チャートを描画」を押してください</p>
+      </div>
+      <svg id="chart-svg" style="display:none;"></svg>
+    </div>
+  </div>
+</main>
+
+<script>
+let varCount = 0;
+
+const defaultVars = [
+  { name: '販売価格', low: 85, high: 115 },
+  { name: '販売数量', low: 90, high: 110 },
+  { name: '変動費', low: 95, high: 105 },
+];
+
+function addVarCard(name = '', low = '', high = '') {
+  varCount++;
+  const id = `var-${varCount}`;
+  const card = document.createElement('div');
+  card.className = 'var-card';
+  card.id = id;
+  card.innerHTML = `
+    <div class="var-card-header">
+      <span class="var-label">変数 ${varCount}</span>
+      <button class="btn-remove" onclick="removeCard('${id}')" title="削除">✕</button>
+    </div>
+    <div class="field" style="margin-bottom:8px;">
+      <label>変数名</label>
+      <input type="text" class="v-name" placeholder="例：販売価格" value="${name}">
+    </div>
+    <div class="var-grid">
+      <div class="field">
+        <label>下限値（悲観）</label>
+        <input type="number" class="v-low" placeholder="例：85" value="${low}" step="any">
+      </div>
+      <div class="field">
+        <label>上限値（楽観）</label>
+        <input type="number" class="v-high" placeholder="例：115" value="${high}" step="any">
+      </div>
+    </div>
+  `;
+  document.getElementById('vars-container').appendChild(card);
+}
+
+function removeCard(id) {
+  document.getElementById(id).remove();
+}
+
+function drawChart() {
+  const baseline = parseFloat(document.getElementById('baseline').value);
+  if (isNaN(baseline)) { alert('ベースケース値を入力してください'); return; }
+
+  const cards = document.querySelectorAll('.var-card');
+  const data = [];
+  for (const card of cards) {
+    const name = card.querySelector('.v-name').value.trim();
+    const low  = parseFloat(card.querySelector('.v-low').value);
+    const high = parseFloat(card.querySelector('.v-high').value);
+    if (!name || isNaN(low) || isNaN(high)) continue;
+    data.push({ name, low, high, rangeLow: low - baseline, rangeHigh: high - baseline });
+  }
+  if (data.length === 0) { alert('有効な変数を1つ以上入力してください'); return; }
+
+  // 影響大きい順にソート
+  data.sort((a, b) => {
+    const ra = Math.abs(a.rangeHigh - a.rangeLow);
+    const rb = Math.abs(b.rangeHigh - b.rangeLow);
+    return rb - ra;
+  });
+
+  renderChart(data, baseline);
+}
+
+function renderChart(data, baseline) {
+  document.getElementById('empty-state').style.display = 'none';
+  const svg = document.getElementById('chart-svg');
+  svg.style.display = 'block';
+  svg.innerHTML = '';
+
+  const margin = { top: 30, right: 160, bottom: 50, left: 140 };
+  const barHeight = 36;
+  const barGap = 10;
+  const innerH = data.length * (barHeight + barGap) - barGap;
+  const totalW = svg.parentElement.clientWidth - 48;
+  const totalH = innerH + margin.top + margin.bottom;
+  const W = totalW - margin.left - margin.right;
+
+  svg.setAttribute('width', totalW);
+  svg.setAttribute('height', totalH);
+
+  const g = d3.select(svg).append('g').attr('transform', `translate(${margin.left},${margin.top})`);
+
+  // スケール
+  const allVals = data.flatMap(d => [d.rangeLow, d.rangeHigh]);
+  const xMax = Math.max(Math.abs(d3.min(allVals)), Math.abs(d3.max(allVals))) * 1.15;
+  const xScale = d3.scaleLinear().domain([-xMax, xMax]).range([0, W]);
+
+  // グリッド
+  const xAxis = d3.axisBottom(xScale).ticks(6).tickFormat(d => (d > 0 ? '+' : '') + d);
+  g.append('g').attr('class', 'grid')
+    .call(d3.axisBottom(xScale).ticks(6).tickSize(-innerH).tickFormat(''))
+    .attr('transform', `translate(0,${innerH})`);
+
+  // ゼロ線（baseline）
+  g.append('line')
+    .attr('class', 'baseline-line')
+    .attr('x1', xScale(0)).attr('x2', xScale(0))
+    .attr('y1', -8).attr('y2', innerH + 8);
+
+  // バー描画
+  data.forEach((d, i) => {
+    const y = i * (barHeight + barGap);
+    const xL = xScale(Math.min(d.rangeLow, 0));
+    const xH = xScale(Math.max(d.rangeHigh, 0));
+    const wLow  = xScale(Math.min(d.rangeLow, 0)) - xScale(Math.min(d.rangeLow, d.rangeHigh));
+    const wHigh = xScale(Math.max(d.rangeLow, d.rangeHigh)) - xScale(Math.max(d.rangeLow, 0));
+
+    const lowLeft  = xScale(Math.min(d.rangeLow, 0));
+    const highLeft = xScale(Math.max(0, Math.min(d.rangeLow, d.rangeHigh)));
+
+    // 低バー（左側 / 赤）
+    if (d.rangeLow < 0) {
+      g.append('rect').attr('class', 'bar-low')
+        .attr('x', xScale(d.rangeLow)).attr('y', y)
+        .attr('width', xScale(0) - xScale(d.rangeLow)).attr('height', barHeight)
+        .attr('rx', 3);
+    }
+    // 高バー（右側 / 青）
+    if (d.rangeHigh > 0) {
+      g.append('rect').attr('class', 'bar-high')
+        .attr('x', xScale(0)).attr('y', y)
+        .attr('width', xScale(d.rangeHigh) - xScale(0)).attr('height', barHeight)
+        .attr('rx', 3);
+    }
+
+    // 変数名（左側）
+    g.append('text').attr('class', 'var-name')
+      .attr('x', -10).attr('y', y + barHeight / 2 + 1)
+      .attr('text-anchor', 'end').attr('dominant-baseline', 'middle')
+      .text(d.name);
+
+    // 数値ラベル（右側）
+    const labelX = W + 12;
+    g.append('text').attr('class', 'val-label').attr('fill', '#d63031')
+      .attr('x', labelX).attr('y', y + barHeight / 2 - 7)
+      .attr('dominant-baseline', 'middle')
+      .text(`↓ ${d.low} (${d.rangeLow >= 0 ? '+' : ''}${d.rangeLow.toFixed(1)})`);
+    g.append('text').attr('class', 'val-label').attr('fill', '#0984e3')
+      .attr('x', labelX).attr('y', y + barHeight / 2 + 9)
+      .attr('dominant-baseline', 'middle')
+      .text(`↑ ${d.high} (+${d.rangeHigh >= 0 ? '' : ''}${d.rangeHigh.toFixed(1)})`);
+  });
+
+  // X軸
+  g.append('g').attr('class', 'axis')
+    .attr('transform', `translate(0,${innerH})`)
+    .call(xAxis);
+
+  // X軸ラベル
+  g.append('text').attr('fill', '#636e72').attr('font-size', 11)
+    .attr('x', W / 2).attr('y', innerH + 40)
+    .attr('text-anchor', 'middle')
+    .text('ベースケースからの変動');
+
+  // 凡例
+  const legendY = -20;
+  g.append('rect').attr('x', W - 120).attr('y', legendY - 7).attr('width', 12).attr('height', 12).attr('fill', '#d63031').attr('rx', 2);
+  g.append('text').attr('class', 'legend').attr('x', W - 104).attr('y', legendY + 1).attr('dominant-baseline', 'middle').text('下限（悲観シナリオ）');
+  g.append('rect').attr('x', W - 120).attr('y', legendY + 10).attr('width', 12).attr('height', 12).attr('fill', '#0984e3').attr('rx', 2);
+  g.append('text').attr('class', 'legend').attr('x', W - 104).attr('y', legendY + 18).attr('dominant-baseline', 'middle').text('上限（楽観シナリオ）');
+}
+
+// 初期化
+defaultVars.forEach(v => addVarCard(v.name, v.low, v.high));
+document.getElementById('btn-add').addEventListener('click', () => addVarCard());
+document.getElementById('btn-draw').addEventListener('click', drawChart);
+window.addEventListener('load', drawChart);
+</script>
+</body>
+</html>
